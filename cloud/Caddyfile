@@ -1,0 +1,13 @@
+{$CLOUD_DOMAIN} {
+	# InfluxDB write API: this is what the Pi aggregator's forwarder posts to
+	handle /api/v2/write* {
+		reverse_proxy influxdb:8086
+	}
+
+	# Grafana dashboard, served under /grafana for remote viewing
+	handle_path /grafana/* {
+		reverse_proxy grafana:3000
+	}
+
+	redir / /grafana/ permanent
+}

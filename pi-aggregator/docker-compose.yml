@@ -1,0 +1,19 @@
+services:
+  aggregator:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      PI_API_KEY: ${PI_API_KEY}
+      CLOUD_INFLUX_URL: ${CLOUD_INFLUX_URL}
+      CLOUD_INFLUX_TOKEN: ${CLOUD_INFLUX_TOKEN}
+      CLOUD_INFLUX_ORG: ${CLOUD_INFLUX_ORG}
+      CLOUD_INFLUX_BUCKET: ${CLOUD_INFLUX_BUCKET}
+      DB_PATH: /data/queue.sqlite3
+      DATA_DIR: /data/archive
+    volumes:
+      # Mounted so both the forward-queue DB and the permanent SD card
+      # CSV archive persist on the Pi's own storage across container
+      # restarts/rebuilds, not just inside the container filesystem.
+      - ./data:/data
+    restart: unless-stopped

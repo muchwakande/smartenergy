@@ -1,0 +1,17 @@
+# Secrets
+.env
+firmware/nodemcu-current-monitor/include/config.h
+
+# PlatformIO build artifacts
+firmware/**/.pio/
+
+# Pi aggregator local data (SQLite queue + SD card CSV archive)
+pi-aggregator/data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS cruft
+.DS_Store

@@ -1,0 +1,52 @@
+services:
+  influxdb:
+    image: influxdb:2.7
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_INIT_USERNAME:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_INIT_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${CLOUD_INFLUX_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${CLOUD_INFLUX_BUCKET}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${CLOUD_INFLUX_TOKEN}
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_SERVER_ROOT_URL: https://${CLOUD_DOMAIN}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      INFLUX_TOKEN: ${CLOUD_INFLUX_TOKEN}
+      INFLUX_ORG: ${CLOUD_INFLUX_ORG}
+      INFLUX_BUCKET: ${CLOUD_INFLUX_BUCKET}
+    depends_on:
+      - influxdb
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      CLOUD_DOMAIN: ${CLOUD_DOMAIN}
+    depends_on:
+      - influxdb
+      - grafana
+    restart: unless-stopped
+
+volumes:
+  influxdb-data:
+  grafana-data:
+  caddy-data:
+  caddy-config:
