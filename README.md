@@ -91,6 +91,49 @@ curl localhost:8080/healthz
 - Forward queue: `pi-aggregator/data/queue.sqlite3` (rows deleted only once
   successfully written to the cloud).
 
+### Optional: a PZEM-004T wired directly into the Pi
+
+In addition to (or instead of) NodeMCU-connected sensors, one PZEM-004T can
+be wired straight into the Pi over a USB-to-TTL serial adapter (e.g. a
+CP2102 or CH340 module) — useful for monitoring whatever circuit the Pi
+itself is near, without a separate microcontroller.
+
+Wiring: PZEM `TX` -> adapter `RX`, PZEM `RX` -> adapter `TX`, PZEM `GND` ->
+adapter `GND`, PZEM `5V` -> adapter `5V` (check your adapter can source
+enough current, or power the PZEM separately). The adapter plugs into the
+Pi's USB port. As with the NodeMCU wiring, connecting the module's
+mains-side terminals is line-voltage work — treat it accordingly.
+
+If running the aggregator via Docker Compose, the container needs access
+to the adapter's serial device. Uncomment the `devices:` block in
+`pi-aggregator/docker-compose.yml`, matching the path to your adapter
+(`ls /dev/ttyUSB*` on the Pi to find it), then recreate the container:
+
+```bash
+docker compose --env-file ../.env up -d --build
+```
+
+This local sensor is **off by default** — it's optional hardware that may
+not be plugged in — and is controlled independently of the rest of the
+pipeline via three endpoints, authenticated the same way as `/ingest`:
+
+```bash
+curl -X POST localhost:8080/local-sensor/start -H "X-Api-Key: $PI_API_KEY"
+curl localhost:8080/local-sensor/status -H "X-Api-Key: $PI_API_KEY"
+curl -X POST localhost:8080/local-sensor/stop -H "X-Api-Key: $PI_API_KEY"
+```
+
+Once started, it polls the sensor every `LOCAL_SENSOR_POLL_INTERVAL_SECONDS`
+(default 10s) and feeds readings into the exact same archive + forward-queue
+path as NodeMCU ingests, tagged with `LOCAL_SENSOR_DEVICE_ID` (default
+`pi-local`) as its `device_id`. A failed read (adapter unplugged, wiring
+issue, garbled Modbus frame) is logged and retried next cycle rather than
+stopping the handler — check `/local-sensor/status` for `last_error`.
+
+This integration was written and reviewed here but **not tested against
+real hardware** — the PZEM-004T Modbus-RTU register map it relies on is
+well documented, but verify readings against a known load once wired up.
+
 ## 3. Cloud stack
 
 Runs on a public VPS. Requires a domain name with a DNS A record pointing at

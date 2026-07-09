@@ -16,6 +16,10 @@ class Config:
     forward_poll_interval_seconds: float
     forward_min_backoff_seconds: float
     forward_max_backoff_seconds: float
+    local_sensor_device_id: str
+    local_sensor_serial_port: str
+    local_sensor_slave_addr: int
+    local_sensor_poll_interval_seconds: float
 
 
 def load_config() -> Config:
@@ -32,4 +36,8 @@ def load_config() -> Config:
         forward_poll_interval_seconds=float(os.environ.get("FORWARD_POLL_INTERVAL_SECONDS", "5")),
         forward_min_backoff_seconds=float(os.environ.get("FORWARD_MIN_BACKOFF_SECONDS", "2")),
         forward_max_backoff_seconds=float(os.environ.get("FORWARD_MAX_BACKOFF_SECONDS", "300")),
+        local_sensor_device_id=os.environ.get("LOCAL_SENSOR_DEVICE_ID", "pi-local"),
+        local_sensor_serial_port=os.environ.get("LOCAL_SENSOR_SERIAL_PORT", "/dev/ttyUSB0"),
+        local_sensor_slave_addr=int(os.environ.get("LOCAL_SENSOR_SLAVE_ADDR", "0xF8"), 0),
+        local_sensor_poll_interval_seconds=float(os.environ.get("LOCAL_SENSOR_POLL_INTERVAL_SECONDS", "10")),
     )

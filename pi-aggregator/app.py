@@ -6,6 +6,7 @@ from flask import Flask, jsonify, request
 
 import forward_queue
 import forwarder
+import local_sensor
 from config import load_config
 from sd_logger import SdLogger
 
@@ -25,6 +26,11 @@ _forwarder_thread = threading.Thread(
 )
 _forwarder_thread.start()
 
+# Not started here: this is optional hardware (a PZEM-004T wired directly
+# into the Pi) that may not be plugged in, so it's toggled on demand via
+# the /local-sensor/* endpoints below rather than always running.
+local_sensor_handler = local_sensor.LocalSensorHandler(conn, archive, cfg)
+
 app = Flask(__name__)
 
 _REQUIRED_FIELDS = (
@@ -41,7 +47,38 @@ _REQUIRED_FIELDS = (
 
 @app.get("/healthz")
 def healthz():
-    return jsonify(status="ok", pending_forward=forward_queue.pending_count(conn))
+    return jsonify(
+        status="ok",
+        pending_forward=forward_queue.pending_count(conn),
+        local_sensor_running=local_sensor_handler.is_running(),
+    )
+
+
+@app.post("/local-sensor/start")
+def local_sensor_start():
+    if request.headers.get("X-Api-Key") != cfg.api_key:
+        return jsonify(error="unauthorized"), 401
+    started = local_sensor_handler.start()
+    return jsonify(status="started" if started else "already_running"), 200
+
+
+@app.post("/local-sensor/stop")
+def local_sensor_stop():
+    if request.headers.get("X-Api-Key") != cfg.api_key:
+        return jsonify(error="unauthorized"), 401
+    stopped = local_sensor_handler.stop()
+    return jsonify(status="stopped" if stopped else "already_stopped"), 200
+
+
+@app.get("/local-sensor/status")
+def local_sensor_status():
+    if request.headers.get("X-Api-Key") != cfg.api_key:
+        return jsonify(error="unauthorized"), 401
+    return jsonify(
+        running=local_sensor_handler.is_running(),
+        last_reading_at=local_sensor_handler.last_reading_at,
+        last_error=local_sensor_handler.last_error,
+    )
 
 
 @app.post("/ingest")

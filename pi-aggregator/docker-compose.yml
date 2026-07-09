@@ -11,9 +11,18 @@ services:
       CLOUD_INFLUX_BUCKET: ${CLOUD_INFLUX_BUCKET}
       DB_PATH: /data/queue.sqlite3
       DATA_DIR: /data/archive
+      LOCAL_SENSOR_DEVICE_ID: ${LOCAL_SENSOR_DEVICE_ID:-pi-local}
+      LOCAL_SENSOR_SERIAL_PORT: ${LOCAL_SENSOR_SERIAL_PORT:-/dev/ttyUSB0}
+      LOCAL_SENSOR_SLAVE_ADDR: ${LOCAL_SENSOR_SLAVE_ADDR:-0xF8}
+      LOCAL_SENSOR_POLL_INTERVAL_SECONDS: ${LOCAL_SENSOR_POLL_INTERVAL_SECONDS:-10}
     volumes:
       # Mounted so both the forward-queue DB and the permanent SD card
       # CSV archive persist on the Pi's own storage across container
       # restarts/rebuilds, not just inside the container filesystem.
       - ./data:/data
+    # Uncomment to give the container access to a PZEM-004T wired directly
+    # into the Pi via a USB-to-TTL serial adapter (see README). Match the
+    # device path to your adapter - check with `ls /dev/ttyUSB*` on the Pi.
+    # devices:
+    #   - "/dev/ttyUSB0:/dev/ttyUSB0"
     restart: unless-stopped
