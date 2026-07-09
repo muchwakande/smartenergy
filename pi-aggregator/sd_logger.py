@@ -6,9 +6,12 @@ _HEADER = [
     "received_at_iso",
     "device_id",
     "ts",
-    "current_rms_a",
-    "power_va_approx",
-    "assumed_voltage_v",
+    "voltage_v",
+    "current_a",
+    "power_w",
+    "energy_kwh",
+    "frequency_hz",
+    "power_factor",
 ]
 
 
@@ -38,8 +41,11 @@ class SdLogger:
                     datetime.fromtimestamp(received_at, tz=timezone.utc).isoformat(),
                     reading["device_id"],
                     reading["ts"],
-                    reading["current_rms_a"],
-                    reading["power_va_approx"],
-                    reading["assumed_voltage_v"],
+                    reading["voltage_v"],
+                    reading["current_a"],
+                    reading["power_w"],
+                    reading["energy_kwh"],
+                    reading["frequency_hz"],
+                    reading["power_factor"],
                 ]
             )

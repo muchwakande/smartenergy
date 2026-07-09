@@ -3,12 +3,21 @@
 #include <ESP8266HTTPClient.h>
 #include <WiFiClient.h>
 #include <ArduinoJson.h>
+#include <SoftwareSerial.h>
+#include <PZEM004Tv30.h>
 
 #include "config.h"
 
-// Number of ADC samples taken per RMS measurement. At ~50 samples/ms
-// wall-clock on the ESP8266 this covers several mains cycles (50/60Hz).
-static const int NUMBER_OF_SAMPLES = 1000;
+// PZEM-004T talks Modbus-RTU over TTL UART at a fixed 9600 baud. NodeMCU's
+// one hardware UART is tied up with USB/Serial for logging, so the PZEM
+// gets a SoftwareSerial pair instead. Cross-wire: PZEM TX -> NodeMCU RX pin,
+// PZEM RX -> NodeMCU TX pin (through a voltage divider/level shifter if your
+// module is 5V logic).
+static const int PZEM_RX_PIN = D2;
+static const int PZEM_TX_PIN = D1;
+
+SoftwareSerial pzemSerial(PZEM_RX_PIN, PZEM_TX_PIN);
+PZEM004Tv30 pzem(pzemSerial);
 
 static void connectWiFi() {
   if (WiFi.status() == WL_CONNECTED) return;
@@ -32,38 +41,51 @@ static void connectWiFi() {
   }
 }
 
-// Adapted from the classic EmonLib calcIrms approach: tracks a slow-moving
-// DC offset so it works without knowing the exact bias-circuit midpoint,
-// then RMS's the deviation from that offset across the sample window.
-static double readRmsCurrent() {
-  double offsetI = 512.0; // rough initial guess for a 10-bit ADC midpoint
-  double sumSq = 0.0;
+struct Reading {
+  float voltageV;
+  float currentA;
+  float powerW;
+  float energyKwh;
+  float frequencyHz;
+  float powerFactor;
+  bool valid;
+};
 
-  for (int n = 0; n < NUMBER_OF_SAMPLES; n++) {
-    int sample = analogRead(A0);
-    offsetI += (sample - offsetI) / 1024.0;
-    double filtered = sample - offsetI;
-    sumSq += filtered * filtered;
-  }
-
-  double rms = sqrt(sumSq / NUMBER_OF_SAMPLES);
-  return rms * CT_CALIBRATION;
+// The PZEM library returns NAN for any field it couldn't read (e.g. the
+// module isn't wired up yet, or a Modbus frame got garbled) rather than
+// throwing, so a reading is only usable if the core fields all came back.
+static Reading readPzem() {
+  Reading r;
+  r.voltageV = pzem.voltage();
+  r.currentA = pzem.current();
+  r.powerW = pzem.power();
+  r.energyKwh = pzem.energy();
+  r.frequencyHz = pzem.frequency();
+  r.powerFactor = pzem.pf();
+  r.valid = !isnan(r.voltageV) && !isnan(r.currentA) && !isnan(r.powerW);
+  return r;
 }
 
-static void postReading(double currentRmsA) {
+static void postReading(const Reading &r) {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Skipping post, WiFi not connected");
     return;
   }
 
-  double powerVaApprox = currentRmsA * ASSUMED_VOLTAGE_V;
+  if (!r.valid) {
+    Serial.println("PZEM read invalid (check wiring/module power), skipping post");
+    return;
+  }
 
   JsonDocument doc;
   doc["device_id"] = DEVICE_ID;
   doc["ts"] = (uint64_t)millis(); // Pi aggregator stamps authoritative receive time too
-  doc["current_rms_a"] = currentRmsA;
-  doc["power_va_approx"] = powerVaApprox;
-  doc["assumed_voltage_v"] = ASSUMED_VOLTAGE_V;
+  doc["voltage_v"] = r.voltageV;
+  doc["current_a"] = r.currentA;
+  doc["power_w"] = r.powerW;
+  doc["energy_kwh"] = r.energyKwh;
+  doc["frequency_hz"] = r.frequencyHz;
+  doc["power_factor"] = r.powerFactor;
 
   String body;
   serializeJson(doc, body);
@@ -92,14 +114,15 @@ static void postReading(double currentRmsA) {
 void setup() {
   Serial.begin(115200);
   delay(200);
+  pzemSerial.begin(9600);
   connectWiFi();
 }
 
 void loop() {
   connectWiFi();
 
-  double currentRmsA = readRmsCurrent();
-  postReading(currentRmsA);
+  Reading r = readPzem();
+  postReading(r);
 
   delay(SAMPLE_INTERVAL_MS);
 }

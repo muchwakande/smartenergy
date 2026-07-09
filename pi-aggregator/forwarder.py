@@ -11,12 +11,26 @@ logger = logging.getLogger("forwarder")
 
 def _to_line_protocol(rows) -> str:
     lines = []
-    for (_id, device_id, _ts, current_rms_a, power_va_approx, assumed_voltage_v, received_at) in rows:
+    for (
+        _id,
+        device_id,
+        _ts,
+        voltage_v,
+        current_a,
+        power_w,
+        energy_kwh,
+        frequency_hz,
+        power_factor,
+        received_at,
+    ) in rows:
         tags = f"device_id={device_id}"
         fields = (
-            f"current_rms_a={current_rms_a},"
-            f"power_va_approx={power_va_approx},"
-            f"assumed_voltage_v={assumed_voltage_v}"
+            f"voltage_v={voltage_v},"
+            f"current_a={current_a},"
+            f"power_w={power_w},"
+            f"energy_kwh={energy_kwh},"
+            f"frequency_hz={frequency_hz},"
+            f"power_factor={power_factor}"
         )
         lines.append(f"energy,{tags} {fields} {received_at}")
     return "\n".join(lines)

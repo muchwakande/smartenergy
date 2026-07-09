@@ -15,14 +15,3 @@
 
 // How often to take a reading and POST it, in milliseconds
 #define SAMPLE_INTERVAL_MS 10000
-
-// Assumed nominal mains voltage, used only to compute an approximate
-// apparent power (current-only CT clamp has no real voltage/phase reference)
-#define ASSUMED_VOLTAGE_V 230.0
-
-// SCT-013 calibration: amps-per-volt at the ADC pin, after any onboard
-// divider. Depends on your specific clamp (turns ratio) and burden
-// resistor value. Start with the value printed on the clamp's datasheet,
-// then refine by comparing against a known load (e.g. a kettle) once
-// hardware is wired up.
-#define CT_CALIBRATION 30.0

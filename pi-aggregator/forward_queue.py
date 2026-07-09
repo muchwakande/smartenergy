@@ -17,9 +17,12 @@ def init_db(conn: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             device_id TEXT NOT NULL,
             ts INTEGER NOT NULL,
-            current_rms_a REAL NOT NULL,
-            power_va_approx REAL NOT NULL,
-            assumed_voltage_v REAL NOT NULL,
+            voltage_v REAL NOT NULL,
+            current_a REAL NOT NULL,
+            power_w REAL NOT NULL,
+            energy_kwh REAL NOT NULL,
+            frequency_hz REAL NOT NULL,
+            power_factor REAL NOT NULL,
             received_at INTEGER NOT NULL
         )
         """
@@ -31,14 +34,17 @@ def enqueue(conn: sqlite3.Connection, reading: dict, received_at: int) -> None:
     with _lock:
         conn.execute(
             "INSERT INTO pending_readings "
-            "(device_id, ts, current_rms_a, power_va_approx, assumed_voltage_v, received_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(device_id, ts, voltage_v, current_a, power_w, energy_kwh, frequency_hz, power_factor, received_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 reading["device_id"],
                 reading["ts"],
-                reading["current_rms_a"],
-                reading["power_va_approx"],
-                reading["assumed_voltage_v"],
+                reading["voltage_v"],
+                reading["current_a"],
+                reading["power_w"],
+                reading["energy_kwh"],
+                reading["frequency_hz"],
+                reading["power_factor"],
                 received_at,
             ),
         )
@@ -48,7 +54,7 @@ def enqueue(conn: sqlite3.Connection, reading: dict, received_at: int) -> None:
 def fetch_batch(conn: sqlite3.Connection, limit: int):
     with _lock:
         cur = conn.execute(
-            "SELECT id, device_id, ts, current_rms_a, power_va_approx, assumed_voltage_v, received_at "
+            "SELECT id, device_id, ts, voltage_v, current_a, power_w, energy_kwh, frequency_hz, power_factor, received_at "
             "FROM pending_readings ORDER BY id ASC LIMIT ?",
             (limit,),
         )

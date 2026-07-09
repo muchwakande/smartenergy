@@ -1,24 +1,27 @@
 # Smart Energy Usage Monitoring
 
-Monitors electrical current draw using a non-invasive CT clamp on a NodeMCU,
-relayed through a Raspberry Pi to a cloud dashboard reachable from anywhere.
+Monitors electrical usage using a PZEM-004T voltage/current sensor on a
+NodeMCU, relayed through a Raspberry Pi to a cloud dashboard reachable from
+anywhere.
 
 ## Architecture
 
 ```
-[SCT-013 CT clamp] --analog--> [NodeMCU] --HTTP POST--> [Raspberry Pi aggregator]
-                                                                |
-                                            +-------------------+-------------------+
-                                            |                                       |
-                                   SD card CSV archive                    forwards batches over
-                                   (permanent, never deleted)             HTTPS to cloud InfluxDB
-                                                                                    |
-                                                                          [Cloud VPS: Caddy (TLS)
-                                                                           -> InfluxDB + Grafana]
+[PZEM-004T sensor] --serial (Modbus-RTU)--> [NodeMCU] --HTTP POST--> [Raspberry Pi aggregator]
+                                                                            |
+                                                    +-----------------------+-----------------------+
+                                                    |                                                |
+                                           SD card CSV archive                             forwards batches over
+                                           (permanent, never deleted)                      HTTPS to cloud InfluxDB
+                                                                                                     |
+                                                                                           [Cloud VPS: Caddy (TLS)
+                                                                                            -> InfluxDB + Grafana]
 ```
 
-- **NodeMCU**: samples the CT clamp, computes RMS current, POSTs a JSON reading to
-  the Pi every ~10s. No MQTT client, no local buffering — that's the Pi's job.
+- **NodeMCU**: polls the PZEM-004T over a serial (Modbus-RTU) connection for
+  voltage, current, active power, cumulative energy, frequency, and power
+  factor, then POSTs a JSON reading to the Pi every ~10s. No MQTT client, no
+  local buffering — that's the Pi's job.
 - **Pi aggregator**: accepts readings over HTTP, immediately (a) appends them to a
   permanent CSV log on the SD card, and (b) queues them in SQLite for forwarding.
   A background thread drains the queue to the cloud, retrying with backoff if the
@@ -27,10 +30,11 @@ relayed through a Raspberry Pi to a cloud dashboard reachable from anywhere.
 - **Cloud**: a VPS running InfluxDB (time-series storage) + Grafana (dashboard),
   behind Caddy for automatic HTTPS, so you can check usage from anywhere.
 
-**Note on accuracy**: a CT clamp measures current only — there's no voltage/phase
-reference, so true active power (W) can't be computed. Readings include an
-*approximate* apparent power (`power_va_approx`) based on an assumed nominal
-mains voltage; treat it as an estimate, not a wattmeter-grade figure.
+**Note on the energy counter**: `energy_kwh` is a cumulative counter tallied
+inside the PZEM-004T module itself, not by the firmware — it keeps counting
+across NodeMCU reboots, but resets to zero if the module itself loses power
+(some modules support a reset via a physical button or Modbus command; see
+your module's datasheet).
 
 ## Repo layout
 
@@ -40,28 +44,34 @@ mains voltage; treat it as an estimate, not a wattmeter-grade figure.
 
 ## 1. Firmware
 
-Hardware: SCT-013 CT clamp around one live wire of the circuit you want to
-monitor, feeding a burden resistor + DC bias network into NodeMCU pin `A0`
-(the bias circuit centers the AC signal within the ADC's 0-3.3V positive-only
-range — a common CT clamp + burden resistor + voltage divider setup; the exact
-component values depend on your specific clamp).
+Hardware: PZEM-004T module wired into the circuit you want to monitor (mains
+L/N to the module's voltage terminals, live wire through the module's current
+sensing — either direct in-line wiring or an external split-core CT clamp,
+depending on your module variant), with its TTL serial pins connected to the
+NodeMCU over `SoftwareSerial`: PZEM `TX` -> NodeMCU `D2`, PZEM `RX` -> NodeMCU
+`D1` (through a level shifter/voltage divider if your module's logic level is
+5V). **Wiring the module's mains-side terminals is line-voltage work — treat
+it with the same care as any mains wiring, and double check your specific
+module's datasheet before connecting anything.**
 
 ```bash
 cd firmware/nodemcu-current-monitor
 cp include/config.example.h include/config.h
-# edit config.h: WiFi credentials, Pi host/port, API key, device_id, calibration
+# edit config.h: WiFi credentials, Pi host/port, API key, device_id
 pio run -t upload   # requires PlatformIO CLI (pio) installed locally
 pio device monitor
 ```
 
-`CT_CALIBRATION` in `config.h` converts the ADC's RMS reading into amps. Start
-with the value from your clamp's datasheet, then refine by comparing against a
-known load (e.g. a kettle rated in watts, at a known voltage) once wired up.
+The PZEM-004T reports calibrated voltage/current/power directly — there's no
+software calibration constant to tune, unlike a CT-clamp setup. If readings
+come back invalid (`NAN`), the firmware skips posting that cycle and logs a
+warning over serial; check the wiring and that the module has mains power.
 
 This firmware was written and reviewed here but **not compiled or flashed** —
 PlatformIO isn't available in this environment. Run `pio run` yourself before
-flashing to catch any build errors, and expect to iterate on calibration with
-real hardware.
+flashing to catch any build errors (including confirming the exact PlatformIO
+registry name/version for the PZEM004Tv30 library resolves correctly), and
+verify against real hardware.
 
 ## 2. Pi aggregator
 
@@ -75,7 +85,7 @@ curl localhost:8080/healthz
 ```
 
 - `POST /ingest` (used by NodeMCUs) requires header `X-Api-Key: <PI_API_KEY>`
-  and JSON body `{"device_id", "ts", "current_rms_a", "power_va_approx", "assumed_voltage_v"}`.
+  and JSON body `{"device_id", "ts", "voltage_v", "current_a", "power_w", "energy_kwh", "frequency_hz", "power_factor"}`.
 - Permanent archive: `pi-aggregator/data/archive/readings-YYYY-MM-DD.csv`
   (one row per ingested reading, never deleted by the app).
 - Forward queue: `pi-aggregator/data/queue.sqlite3` (rows deleted only once
@@ -115,7 +125,7 @@ simplicity).
    curl -X POST localhost:8080/ingest \
      -H "X-Api-Key: $PI_API_KEY" \
      -H "Content-Type: application/json" \
-     -d '{"device_id":"test-01","ts":1234567890,"current_rms_a":3.1,"power_va_approx":713,"assumed_voltage_v":230}'
+     -d '{"device_id":"test-01","ts":1234567890,"voltage_v":231.2,"current_a":3.1,"power_w":702,"energy_kwh":12.4,"frequency_hz":50.0,"power_factor":0.98}'
    ```
 3. Confirm it's queued: `curl localhost:8080/healthz` should show
    `pending_forward` briefly non-zero, then 0 once forwarded.

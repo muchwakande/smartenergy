@@ -27,7 +27,16 @@ _forwarder_thread.start()
 
 app = Flask(__name__)
 
-_REQUIRED_FIELDS = ("device_id", "ts", "current_rms_a", "power_va_approx", "assumed_voltage_v")
+_REQUIRED_FIELDS = (
+    "device_id",
+    "ts",
+    "voltage_v",
+    "current_a",
+    "power_w",
+    "energy_kwh",
+    "frequency_hz",
+    "power_factor",
+)
 
 
 @app.get("/healthz")
