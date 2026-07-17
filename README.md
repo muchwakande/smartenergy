@@ -86,10 +86,17 @@ curl localhost:8080/healthz
 
 - `POST /ingest` (used by NodeMCUs) requires header `X-Api-Key: <PI_API_KEY>`
   and JSON body `{"device_id", "ts", "voltage_v", "current_a", "power_w", "energy_kwh", "frequency_hz", "power_factor"}`.
+- `GET /readings?n=10&device_id=kitchen-01` requires header
+  `X-Api-Key: <PI_API_KEY>`. Returns the most recent `n` readings (default
+  10, max 500), newest first, optionally filtered to one `device_id`:
+  ```bash
+  curl "localhost:8080/readings?n=10" -H "X-Api-Key: $PI_API_KEY"
+  ```
 - Permanent archive: `pi-aggregator/data/archive/readings-YYYY-MM-DD.csv`
   (one row per ingested reading, never deleted by the app).
 - Forward queue: `pi-aggregator/data/queue.sqlite3` (rows deleted only once
-  successfully written to the cloud).
+  successfully written to the cloud). A separate `readings_log` table in the
+  same SQLite file backs `/readings` and is never trimmed.
 
 ### Optional: a PZEM-004T wired directly into the Pi
 

@@ -106,6 +106,7 @@ class LocalSensorHandler:
 
                 self._archive.log(reading, received_at)
                 forward_queue.enqueue(self._conn, reading, received_at)
+                forward_queue.log_reading(self._conn, reading, received_at)
 
                 self.last_reading_at = received_at
                 self.last_error = None

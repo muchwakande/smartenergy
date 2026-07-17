@@ -96,8 +96,36 @@ def ingest():
     # queue or cloud path has problems.
     archive.log(body, received_at)
     forward_queue.enqueue(conn, body, received_at)
+    forward_queue.log_reading(conn, body, received_at)
 
     return jsonify(status="accepted"), 202
+
+
+@app.get("/readings")
+def readings():
+    if request.headers.get("X-Api-Key") != cfg.api_key:
+        return jsonify(error="unauthorized"), 401
+
+    try:
+        n = int(request.args.get("n", 10))
+    except ValueError:
+        return jsonify(error="invalid n"), 400
+    n = max(1, min(n, 500))
+    device_id = request.args.get("device_id")
+
+    rows = forward_queue.fetch_recent(conn, n, device_id)
+    fields = (
+        "device_id",
+        "ts",
+        "voltage_v",
+        "current_a",
+        "power_w",
+        "energy_kwh",
+        "frequency_hz",
+        "power_factor",
+        "received_at",
+    )
+    return jsonify(readings=[dict(zip(fields, row)) for row in rows])
 
 
 if __name__ == "__main__":
