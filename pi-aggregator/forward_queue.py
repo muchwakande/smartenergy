@@ -30,8 +30,9 @@ def init_db(conn: sqlite3.Connection) -> None:
         """
     )
     # Unlike pending_readings (drained/deleted once forwarded), this table
-    # is append-only and never trimmed, so "last N readings" can be served
-    # regardless of forward status.
+    # isn't tied to forward status - it's a bounded recent-readings buffer
+    # for GET /readings (see log_reading's max_rows), not a long-term
+    # archive. The CSV archive (sd_logger.py) is the long-term local record.
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS readings_log (
@@ -72,7 +73,7 @@ def enqueue(conn: sqlite3.Connection, reading: dict, received_at: int) -> None:
         conn.commit()
 
 
-def log_reading(conn: sqlite3.Connection, reading: dict, received_at: int) -> None:
+def log_reading(conn: sqlite3.Connection, reading: dict, received_at: int, max_rows: int | None = None) -> None:
     with _lock:
         conn.execute(
             "INSERT INTO readings_log "
@@ -90,6 +91,13 @@ def log_reading(conn: sqlite3.Connection, reading: dict, received_at: int) -> No
                 received_at,
             ),
         )
+        if max_rows is not None:
+            # id is the rowid (INTEGER PRIMARY KEY), so this is an indexed
+            # range delete - cheap even run on every insert.
+            conn.execute(
+                "DELETE FROM readings_log WHERE id <= (SELECT COALESCE(MAX(id), 0) FROM readings_log) - ?",
+                (max_rows,),
+            )
         conn.commit()
 
 

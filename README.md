@@ -110,11 +110,14 @@ sudo systemctl restart smartenergy-aggregator
   ```bash
   curl "localhost:8080/readings?n=10" -H "X-Api-Key: $PI_API_KEY"
   ```
-- Permanent archive: `pi-aggregator/data/archive/readings-YYYY-MM-DD.csv`
-  (one row per ingested reading, never deleted by the app).
+- SD card archive: `pi-aggregator/data/archive/readings-YYYY-MM-DD.csv`,
+  one file per day. Kept for `DATA_RETENTION_DAYS` (default 365, sized for
+  a 64GB card); whole daily files older than that are deleted.
 - Forward queue: `pi-aggregator/data/queue.sqlite3` (rows deleted only once
-  successfully written to the cloud). A separate `readings_log` table in the
-  same SQLite file backs `/readings` and is never trimmed.
+  successfully written to the cloud). A separate `readings_log` table in
+  the same SQLite file backs `/readings` and is capped at
+  `READINGS_LOG_MAX_ROWS` (default 10000, oldest rows pruned on insert) -
+  it's a recent-readings view, not a long-term archive.
 
 ### Optional: a PZEM-004T wired directly into the Pi
 

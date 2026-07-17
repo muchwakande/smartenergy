@@ -16,7 +16,7 @@ logger = logging.getLogger("app")
 cfg = load_config()
 conn = forward_queue.get_connection(cfg.db_path)
 forward_queue.init_db(conn)
-archive = SdLogger(cfg.data_dir)
+archive = SdLogger(cfg.data_dir, cfg.data_retention_days)
 
 _stop_event = threading.Event()
 _forwarder_thread = threading.Thread(
@@ -96,7 +96,7 @@ def ingest():
     # queue or cloud path has problems.
     archive.log(body, received_at)
     forward_queue.enqueue(conn, body, received_at)
-    forward_queue.log_reading(conn, body, received_at)
+    forward_queue.log_reading(conn, body, received_at, cfg.readings_log_max_rows)
 
     return jsonify(status="accepted"), 202
 

@@ -20,6 +20,8 @@ class Config:
     local_sensor_serial_port: str
     local_sensor_slave_addr: int
     local_sensor_poll_interval_seconds: float
+    data_retention_days: int
+    readings_log_max_rows: int
 
 
 def load_config() -> Config:
@@ -40,4 +42,6 @@ def load_config() -> Config:
         local_sensor_serial_port=os.environ.get("LOCAL_SENSOR_SERIAL_PORT", "/dev/ttyUSB0"),
         local_sensor_slave_addr=int(os.environ.get("LOCAL_SENSOR_SLAVE_ADDR", "0xF8"), 0),
         local_sensor_poll_interval_seconds=float(os.environ.get("LOCAL_SENSOR_POLL_INTERVAL_SECONDS", "10")),
+        data_retention_days=int(os.environ.get("DATA_RETENTION_DAYS", "365")),
+        readings_log_max_rows=int(os.environ.get("READINGS_LOG_MAX_ROWS", "10000")),
     )
