@@ -84,6 +84,15 @@ NodeMCU's `3V3` pin and not `VU`/`VIN` (see above).
 This firmware has been built, flashed, and verified end-to-end against real
 hardware (WiFi join, PZEM read, HTTP POST to the Pi, all confirmed working).
 
+### Finding the Pi automatically (mDNS)
+
+The NodeMCU doesn't need a hardcoded Pi IP. At boot (and again if a POST
+ever fails) it queries mDNS/DNS-SD for `_smartenergy._tcp`, which the Pi
+aggregator advertises automatically (see below) — no config needed beyond
+what's already in `config.h`. `PI_HOST`/`PI_PORT` are kept only as a
+fallback for networks where multicast is blocked or the Pi isn't running
+avahi; verified working via `MDNS.queryService("smartenergy", "tcp")`.
+
 ## 2. Pi aggregator
 
 Runs directly on the Raspberry Pi (no Docker), on the home network, as a
@@ -104,7 +113,19 @@ curl localhost:8080/healthz
 `requirements.txt` into it, and installs+starts a systemd unit
 (`smartenergy-aggregator.service`) running gunicorn with a single worker
 (the forwarder and local-sensor background threads must not be started more
-than once). Re-run it after `git pull` to redeploy. Useful commands:
+than once). It also advertises the aggregator over mDNS/DNS-SD as
+`_smartenergy._tcp` on `LISTEN_PORT` (default 8080), via a static service
+file (`deploy/smartenergy-aggregator.avahi-service`) installed to
+`/etc/avahi/services/` — this is what NodeMCUs discover automatically
+(see the firmware section above). Relies on `avahi-daemon`, which ships
+enabled by default on Raspberry Pi OS; `install.sh` installs it only if
+somehow missing. Verify it's working with:
+
+```bash
+avahi-browse -rt _smartenergy._tcp
+```
+
+Re-run `install.sh` after `git pull` to redeploy. Useful commands:
 
 ```bash
 sudo systemctl status smartenergy-aggregator

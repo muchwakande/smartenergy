@@ -1,12 +1,35 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
+#include <ESP8266mDNS.h>
 #include <WiFiClient.h>
 #include <ArduinoJson.h>
 #include <SoftwareSerial.h>
 #include <PZEM004Tv30.h>
 
 #include "config.h"
+
+// The Pi aggregator advertises itself over mDNS/DNS-SD as _smartenergy._tcp
+// (see pi-aggregator/deploy/smartenergy-aggregator.avahi-service), so it can
+// be found on the LAN without a hardcoded IP. PI_HOST/PI_PORT from config.h
+// are kept as a fallback for networks where multicast is blocked or the
+// aggregator isn't running avahi.
+IPAddress piIp;
+uint16_t piPort = PI_PORT;
+
+static void resolvePiAddress() {
+  int n = MDNS.queryService("smartenergy", "tcp");
+  if (n > 0) {
+    piIp = MDNS.IP(0);
+    piPort = MDNS.port(0);
+    Serial.printf("Resolved aggregator via mDNS: %s:%u\n", piIp.toString().c_str(), piPort);
+    return;
+  }
+
+  Serial.println("mDNS discovery found nothing, falling back to configured PI_HOST");
+  piIp.fromString(PI_HOST);
+  piPort = PI_PORT;
+}
 
 // PZEM-004T talks Modbus-RTU over TTL UART at a fixed 9600 baud. NodeMCU's
 // one hardware UART is tied up with USB/Serial for logging, so the PZEM
@@ -92,7 +115,7 @@ static void postReading(const Reading &r) {
 
   WiFiClient client;
   HTTPClient http;
-  String url = String("http://") + PI_HOST + ":" + PI_PORT + "/ingest";
+  String url = String("http://") + piIp.toString() + ":" + piPort + "/ingest";
 
   if (!http.begin(client, url)) {
     Serial.println("HTTP begin failed");
@@ -106,7 +129,8 @@ static void postReading(const Reading &r) {
   if (status > 0) {
     Serial.printf("POST %s -> %d\n", url.c_str(), status);
   } else {
-    Serial.printf("POST failed: %s\n", http.errorToString(status).c_str());
+    Serial.printf("POST failed: %s, re-resolving aggregator address\n", http.errorToString(status).c_str());
+    resolvePiAddress();
   }
   http.end();
 }
@@ -116,10 +140,13 @@ void setup() {
   delay(200);
   pzemSerial.begin(9600);
   connectWiFi();
+  MDNS.begin(DEVICE_ID);
+  resolvePiAddress();
 }
 
 void loop() {
   connectWiFi();
+  MDNS.update();
 
   Reading r = readPzem();
   postReading(r);

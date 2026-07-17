@@ -1,0 +1,15 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!--
+  Advertises the aggregator over mDNS/DNS-SD as _smartenergy._tcp, so
+  NodeMCU firmware can find it on the LAN without a hardcoded IP (see
+  ESP8266mDNS's MDNS.queryService("smartenergy", "tcp") in main.cpp).
+  Installed to /etc/avahi/services/ by deploy/install.sh.
+-->
+<service-group>
+  <name replace-wildcards="yes">SmartEnergy Aggregator on %h</name>
+  <service>
+    <type>_smartenergy._tcp</type>
+    <port>__LISTEN_PORT__</port>
+  </service>
+</service-group>

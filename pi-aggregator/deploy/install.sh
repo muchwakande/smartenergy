@@ -30,6 +30,23 @@ sed "s|__APP_DIR__|$APP_DIR|g; s|__RUN_USER__|$RUN_USER|g" \
 sudo systemctl daemon-reload
 sudo systemctl enable --now "$SERVICE_NAME"
 
+# mDNS/DNS-SD advertisement (_smartenergy._tcp) so NodeMCUs can discover the
+# aggregator without a hardcoded IP. avahi-daemon ships enabled by default on
+# Raspberry Pi OS (it's what makes raspberrypi.local resolve); install it
+# only if it's somehow missing.
+if ! dpkg -s avahi-daemon >/dev/null 2>&1; then
+  sudo apt-get install -y avahi-daemon
+fi
+
+LISTEN_PORT="$(grep '^LISTEN_PORT=' "$APP_DIR/.env" | cut -d= -f2- || true)"
+LISTEN_PORT="${LISTEN_PORT:-8080}"
+
+sed "s|__LISTEN_PORT__|$LISTEN_PORT|g" \
+  "$APP_DIR/pi-aggregator/deploy/smartenergy-aggregator.avahi-service" \
+  | sudo tee /etc/avahi/services/smartenergy-aggregator.service > /dev/null
+
+sudo systemctl restart avahi-daemon
+
 echo "Deployed. Status: sudo systemctl status $SERVICE_NAME"
 echo "Logs:             sudo journalctl -u $SERVICE_NAME -f"
 echo "If you weren't already in the dialout group, log out/in (or reboot) before using the local PZEM sensor."
