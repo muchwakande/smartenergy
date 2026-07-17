@@ -1,0 +1,11 @@
+services:
+  # Exposes InfluxDB straight to the host network, bypassing Caddy entirely.
+  # Caddy auto-upgrades to HTTPS with a self-signed local CA cert even for a
+  # bare IP address (no real domain), which plain HTTP clients like the Pi
+  # aggregator's `requests` won't trust - going straight to InfluxDB avoids
+  # that TLS dance for local/LAN testing. Not for real deployments: use
+  # `docker compose -f docker-compose.yml -f docker-compose.local-test.yml ...`
+  # to opt in.
+  influxdb:
+    ports:
+      - "8086:8086"
