@@ -39,7 +39,8 @@ your module's datasheet).
 ## Repo layout
 
 - `firmware/nodemcu-current-monitor/` — PlatformIO project for the ESP8266
-- `pi-aggregator/` — Flask ingest service + SQLite forward-queue + SD card archive
+- `pi-aggregator/` — Flask ingest service + SQLite forward-queue + SD card archive,
+  deployed on the Pi as a native systemd service (no Docker on the Pi)
 - `cloud/` — Docker Compose stack for the VPS (InfluxDB, Grafana, Caddy)
 
 ## 1. Firmware
@@ -75,13 +76,30 @@ verify against real hardware.
 
 ## 2. Pi aggregator
 
-Runs on the Raspberry Pi, on the home network.
+Runs directly on the Raspberry Pi (no Docker), on the home network, as a
+systemd service.
 
 ```bash
-cd pi-aggregator
-mkdir -p data
-docker compose --env-file ../.env up -d --build
+# on the Pi:
+git clone <this-repo-url> ~/smartenergy
+cd ~/smartenergy
+cp .env.example .env
+# edit .env: PI_API_KEY, CLOUD_INFLUX_* (and LOCAL_SENSOR_* if using the
+# optional local sensor below)
+./pi-aggregator/deploy/install.sh
 curl localhost:8080/healthz
+```
+
+`install.sh` creates a venv under `pi-aggregator/.venv`, installs
+`requirements.txt` into it, and installs+starts a systemd unit
+(`smartenergy-aggregator.service`) running gunicorn with a single worker
+(the forwarder and local-sensor background threads must not be started more
+than once). Re-run it after `git pull` to redeploy. Useful commands:
+
+```bash
+sudo systemctl status smartenergy-aggregator
+sudo journalctl -u smartenergy-aggregator -f
+sudo systemctl restart smartenergy-aggregator
 ```
 
 - `POST /ingest` (used by NodeMCUs) requires header `X-Api-Key: <PI_API_KEY>`
@@ -111,14 +129,12 @@ enough current, or power the PZEM separately). The adapter plugs into the
 Pi's USB port. As with the NodeMCU wiring, connecting the module's
 mains-side terminals is line-voltage work — treat it accordingly.
 
-If running the aggregator via Docker Compose, the container needs access
-to the adapter's serial device. Uncomment the `devices:` block in
-`pi-aggregator/docker-compose.yml`, matching the path to your adapter
-(`ls /dev/ttyUSB*` on the Pi to find it), then recreate the container:
-
-```bash
-docker compose --env-file ../.env up -d --build
-```
+Find the adapter's device path with `ls /dev/ttyUSB*` on the Pi and set
+`LOCAL_SENSOR_SERIAL_PORT` in `.env` accordingly (default `/dev/ttyUSB0`).
+Since the aggregator runs natively (not in a container), no device
+passthrough is needed — `install.sh` already adds the service user to the
+`dialout` group for serial port access; log out/in (or reboot) once after
+the first install for that to take effect.
 
 This local sensor is **off by default** — it's optional hardware that may
 not be plugged in — and is controlled independently of the rest of the
