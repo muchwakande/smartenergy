@@ -55,6 +55,17 @@ NodeMCU over `SoftwareSerial`: PZEM `TX` -> NodeMCU `D2`, PZEM `RX` -> NodeMCU
 it with the same care as any mains wiring, and double check your specific
 module's datasheet before connecting anything.**
 
+**Power the PZEM's TTL-side VCC from NodeMCU's `3V3` pin, not `VU`/`VIN`.**
+`VU`/`VIN` is raw, unregulated 5V tapped straight off the USB cable, and can
+be noisy enough (particularly during WiFi radio current spikes) to disrupt
+the PZEM module's own internal MCU — this presents as the module never
+responding on the serial link at all (reads consistently come back `NAN`),
+even though wiring, voltage level, and protocol are all otherwise correct.
+NodeMCU's onboard `3V3` regulator output is clean and has been confirmed to
+work reliably; `VU` has been confirmed to cause total communication failure
+despite passing every other check (continuity, correct TX/RX crossing,
+correct protocol/library, correct CRC).
+
 ```bash
 cd firmware/nodemcu-current-monitor
 cp include/config.example.h include/config.h
@@ -66,13 +77,12 @@ pio device monitor
 The PZEM-004T reports calibrated voltage/current/power directly — there's no
 software calibration constant to tune, unlike a CT-clamp setup. If readings
 come back invalid (`NAN`), the firmware skips posting that cycle and logs a
-warning over serial; check the wiring and that the module has mains power.
+warning over serial; check the wiring, that the module has mains power, and
+— the most common real-world cause — that the PZEM's VCC is powered from
+NodeMCU's `3V3` pin and not `VU`/`VIN` (see above).
 
-This firmware was written and reviewed here but **not compiled or flashed** —
-PlatformIO isn't available in this environment. Run `pio run` yourself before
-flashing to catch any build errors (including confirming the exact PlatformIO
-registry name/version for the PZEM004Tv30 library resolves correctly), and
-verify against real hardware.
+This firmware has been built, flashed, and verified end-to-end against real
+hardware (WiFi join, PZEM read, HTTP POST to the Pi, all confirmed working).
 
 ## 2. Pi aggregator
 
