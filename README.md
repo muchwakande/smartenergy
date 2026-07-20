@@ -30,6 +30,12 @@ anywhere.
 - **Cloud**: a VPS running InfluxDB (time-series storage) + Grafana (dashboard),
   behind Caddy for automatic HTTPS, so you can check usage from anywhere.
 
+This is the default configuration; two others feed the same Pi aggregator
+and can run alongside it: a PZEM wired directly into the Pi (no NodeMCU),
+and an ESP32+LoRa sensor node for sites without WiFi coverage — see
+"Optional: a PZEM-004T wired directly into the Pi" and "Optional: LoRa
+sensor nodes" under the Pi aggregator section below.
+
 **Note on the energy counter**: `energy_kwh` is a cumulative counter tallied
 inside the PZEM-004T module itself, not by the firmware — it keeps counting
 across NodeMCU reboots, but resets to zero if the module itself loses power
@@ -38,7 +44,8 @@ your module's datasheet).
 
 ## Repo layout
 
-- `firmware/nodemcu-current-monitor/` — PlatformIO project for the ESP8266
+- `firmware/nodemcu-current-monitor/` — PlatformIO project for the ESP8266 (WiFi)
+- `firmware/heltec-lora-node/` — PlatformIO project for an ESP32+LoRa sensor node
 - `pi-aggregator/` — Flask ingest service + SQLite forward-queue + SD card archive,
   deployed on the Pi as a native systemd service (no Docker on the Pi)
 - `cloud/` — Docker Compose stack for the VPS (InfluxDB, Grafana, Caddy)
@@ -190,6 +197,73 @@ stopping the handler — check `/local-sensor/status` for `last_error`.
 This integration was written and reviewed here but **not tested against
 real hardware** — the PZEM-004T Modbus-RTU register map it relies on is
 well documented, but verify readings against a known load once wired up.
+
+### Optional: LoRa sensor nodes (long range, no WiFi)
+
+A third sensor configuration, alongside the WiFi NodeMCU and the Pi-local
+PZEM above: for sites where WiFi coverage doesn't reach (large sites,
+sensors spread across separate buildings), a sensor node can talk to the
+Pi over LoRa instead. It's not a replacement for the WiFi path — all three
+configurations can run at once, feeding the same pipeline.
+
+```
+[PZEM-004T] --serial--> [ESP32 + LoRa node] --LoRa--> [Pi + LoRa gateway radio] --> same archive/forward-queue path
+```
+
+**Node hardware**: an ESP32 board with onboard LoRa (developed against the
+Heltec WiFi LoRa 32 V3, SX1262 radio) rather than a NodeMCU + external LoRa
+module — this also gets a real hardware UART for the PZEM instead of
+`SoftwareSerial` (ESP32 has multiple UARTs, and this board's USB/debug
+console uses separate pins from the ones used here). Firmware:
+`firmware/heltec-lora-node/`. PZEM wiring: `TX -> GPIO5`, `RX -> GPIO6`
+(verify these and the LoRa SPI pins in `src/main.cpp` against your exact
+board revision — Heltec has several similarly-named boards with different
+pin maps). Build/flash the same way as the NodeMCU firmware:
+
+```bash
+cd firmware/heltec-lora-node
+cp include/config.example.h include/config.h
+# edit config.h: device_id, LoRa radio parameters
+pio run -t upload
+```
+
+**Gateway hardware**: an SX1262 LoRa module/HAT wired to the Pi's SPI bus
+and GPIO header (e.g. reset/busy/DIO1/TXEN/RXEN lines) — the pin defaults
+in `.env.example` match `LoRaRF`'s own Raspberry Pi example wiring, not any
+specific HAT, so verify against your exact module's documentation. SPI is
+disabled by default on a fresh Raspberry Pi OS install - enable it with
+`sudo raspi-config` (Interface Options -> SPI) and reboot before using
+this. Started the same way as the local PZEM sensor, via `/lora-gateway/*`:
+
+```bash
+curl -X POST localhost:8080/lora-gateway/start -H "X-Api-Key: $PI_API_KEY"
+curl localhost:8080/lora-gateway/status -H "X-Api-Key: $PI_API_KEY"
+curl -X POST localhost:8080/lora-gateway/stop -H "X-Api-Key: $PI_API_KEY"
+```
+
+**Protocol**: LoRa's payload budget and duty-cycle limits make JSON
+impractical, so nodes send a compact 38-byte fixed-point binary encoding
+(`LoraReading` struct in `main.cpp`, decoded by `lora_gateway.py`'s
+`decode_packet` — the two must stay in sync; a `static_assert` on the
+firmware side guards against silent struct-size drift) instead of the
+`/ingest` JSON schema. Field resolutions match the PZEM's own native
+register resolutions, so no precision is lost.
+
+**Duty cycle / regulatory**: defaults target EU868 at SF9/125kHz, with a
+conservative 60s transmit interval — if you change the spreading factor,
+bandwidth, or region, recompute time-on-air (e.g. with an online LoRa
+airtime calculator) and adjust the interval and `LORA_TX_POWER_DBM` to
+stay within your region's limits.
+
+This configuration was written and reviewed here but **not tested against
+real radios** — no LoRa hardware was available to verify against. What
+*has* been verified: the firmware builds cleanly for the
+`heltec_wifi_lora_32_V3` board, and the binary packet encoding/decoding
+round-trips correctly byte-for-byte between the C++ struct and Python
+`struct.unpack` (matching field values exactly). `LoRaRF` also refuses to
+import outside a real Raspberry Pi (it hard-checks for one), so
+`lora_gateway.py` can only be smoke-tested once deployed there with the
+radio wired up.
 
 ## 3. Cloud stack
 

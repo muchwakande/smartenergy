@@ -7,6 +7,7 @@ from flask import Flask, jsonify, request
 import forward_queue
 import forwarder
 import local_sensor
+import lora_gateway
 from config import load_config
 from sd_logger import SdLogger
 
@@ -31,6 +32,10 @@ _forwarder_thread.start()
 # the /local-sensor/* endpoints below rather than always running.
 local_sensor_handler = local_sensor.LocalSensorHandler(conn, archive, cfg)
 
+# Same pattern: optional LoRa gateway radio, off by default, toggled via
+# the /lora-gateway/* endpoints below.
+lora_gateway_handler = lora_gateway.LoraGatewayHandler(conn, archive, cfg)
+
 app = Flask(__name__)
 
 _REQUIRED_FIELDS = (
@@ -51,6 +56,7 @@ def healthz():
         status="ok",
         pending_forward=forward_queue.pending_count(conn),
         local_sensor_running=local_sensor_handler.is_running(),
+        lora_gateway_running=lora_gateway_handler.is_running(),
     )
 
 
@@ -78,6 +84,33 @@ def local_sensor_status():
         running=local_sensor_handler.is_running(),
         last_reading_at=local_sensor_handler.last_reading_at,
         last_error=local_sensor_handler.last_error,
+    )
+
+
+@app.post("/lora-gateway/start")
+def lora_gateway_start():
+    if request.headers.get("X-Api-Key") != cfg.api_key:
+        return jsonify(error="unauthorized"), 401
+    started = lora_gateway_handler.start()
+    return jsonify(status="started" if started else "already_running"), 200
+
+
+@app.post("/lora-gateway/stop")
+def lora_gateway_stop():
+    if request.headers.get("X-Api-Key") != cfg.api_key:
+        return jsonify(error="unauthorized"), 401
+    stopped = lora_gateway_handler.stop()
+    return jsonify(status="stopped" if stopped else "already_stopped"), 200
+
+
+@app.get("/lora-gateway/status")
+def lora_gateway_status():
+    if request.headers.get("X-Api-Key") != cfg.api_key:
+        return jsonify(error="unauthorized"), 401
+    return jsonify(
+        running=lora_gateway_handler.is_running(),
+        last_reading_at=lora_gateway_handler.last_reading_at,
+        last_error=lora_gateway_handler.last_error,
     )
 
 
